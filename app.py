@@ -1,16 +1,13 @@
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
-from datetime import datetime
-import motor.motor_asyncio
 import os
+import pandas as pd
+from fastapi import FastAPI
+from pydantic import BaseModel
+import motor.motor_asyncio
 from dotenv import load_dotenv
 from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException
 
 # Load environment variables
 load_dotenv()
@@ -36,53 +33,39 @@ def read_root():
 async def search_bus(query: SearchQuery):
     # Construct the URL
     url = f"https://safar724.com/bus/{query.origin}-{query.destination}?date={query.date}"
-    print("HIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII")
     driver = webdriver.Chrome()
+    wait = WebDriverWait(driver,60)
     driver.get(url)
-'''
-    try:
-        # Navigate to the URL
-        driver.get(url)
 
-        # Wait for the search results to load (adjust the selector as needed)
-        WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located((By.CLASS_NAME, "search-result-item"))
-        )
+    ticket_list = []
+    tickets = wait.until(EC.presence_of_all_elements_located((By.CLASS_NAME, "ticketCard_ticket__7HRGj")))
 
-        # Extract the search results
-        results = []
-        result_elements = driver.find_elements(By.CLASS_NAME, "search-result-item")
-        for element in result_elements:
-            result = {
-                'departure_time': element.find_element(By.CLASS_NAME, "departure-time").text,
-                'arrival_time': element.find_element(By.CLASS_NAME, "arrival-time").text,
-                'price': element.find_element(By.CLASS_NAME, "price").text,
-                # Add more fields as needed
+    for ticket in tickets:
+        try:
+            # Using XPath
+            # time_hour = ticket.find_element(By.XPATH, ".//div[contains(@class, 'ticketAction_departureTime')]/p").text
+            # empty_seats = ticket.find_element(By.XPATH, ".//div[contains(@class, 'ticketAction_seat')]/p").text
+            # price_rial = ticket.find_element(By.XPATH, ".//div[contains(@class, 'ticketDetailBusInformation_busInformation')]/p").text
+
+            # Alternatively, using CSS selectors
+            time_departure = ticket.find_element(By.CSS_SELECTOR, "div.ticketAction_departureTime__LlKV9 > p").text
+            empty_seats = ticket.find_element(By.CSS_SELECTOR, "div.ticketAction_seat__QP645 > p").text
+            price_rial = ticket.find_element(By.CSS_SELECTOR, "div.ticketDetailBusInformation_busInformation__SJBAI > p").text
+
+            ticket_item = {
+                'time_departure': time_departure,
+                'empty_seats': empty_seats,
+                'price_rial': price_rial
             }
-            results.append(result)
+            ticket_list.append(ticket_item)
 
-        # Print results to terminal
-        print("Search Results:")
-        for result in results:
-            print(result)
-
-        # Store request and response in MongoDB
-        document = {
-            "request": query.model_dump(),
-            "response": results,
-            "timestamp": datetime.now()
-        }
-        await collection.insert_one(document)
-
-        return {"message": "Search completed and results stored in database", "results": results}
-
-    except TimeoutException:
-        raise HTTPException(status_code=408, detail="Request timed out. The page took too long to load.")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"An error occurred: {str(e)}")
-    finally:
-        driver.quit()
-'''
+        except Exception as e:
+            print(f"Error processing ticket: {e}")
+            continue
+    
+    print(ticket_list)    
+    df = pd.DataFrame(ticket_list)
+    df.to_csv('out.csv', sep='\t', encoding='utf-8', index=False, header=True)
 
 if __name__ == "__main__":
     import uvicorn
